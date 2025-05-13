@@ -1,0 +1,3 @@
+HTTPS_SERVER_IP="***.***.***.***"               # IP HTTPS сервера
+HTTPS_SERVER_PORT="***"                         # Порт HTTPS сервера
+HTTPS_SERVER_KEY_PUBLIC="./configs/***.crt"     # Публичный ключ HTTPS сервера
