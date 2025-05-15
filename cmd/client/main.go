@@ -6,83 +6,101 @@ import (
 	"errors"
 	"fmt"
 	"log"
+	"syscall"
 	"time"
 
 	"github.com/joho/godotenv"
 	"github.com/xuri/excelize/v2"
+	"golang.org/x/term"
 )
 
 func main() {
+	var user clientapi.UserLogin
 
-	prepare()
-	run()
+	prepare(&user)
+	run(&user)
 }
 
 // Подготовительные действия
-func prepare() {
+func prepare(usr *clientapi.UserLogin) {
 
+	// Чтение переменных окружения
 	err := godotenv.Load("./configs/.env")
 	if err != nil {
 		log.Fatal("ошибка чтения переменных окружения:", err)
 	}
-}
 
-// Работа
-func run() {
+	// Ввод данных пользователя при запуске приложения
+	typeUserData(usr)
 
-	menu()
+	// Регистрация на сервере и получение токена
+	err = usr.LoginHttpsServer()
+	if err != nil {
+		log.Fatal("Ошибка регистрации на сервере: ", err)
+	}
+	fmt.Println("Регистрация пользователя выполнена")
+	fmt.Println()
+
 }
 
 // Вывод меню действия
-func menu() {
+func run(usr *clientapi.UserLogin) {
 	var str string
 
-	fmt.Println("1: Вывод информации сервера")
-	fmt.Println("2: Запрос архивных данных")
-	fmt.Println("3: Завершение работы")
-	fmt.Print("-> ")
-	_, err := fmt.Scanln(&str)
-	if err != nil {
-		log.Fatal("Ошибка ввода данных")
-	}
-
-	switch str {
-	case "1":
-		err := showStatusServer()
+	for {
+		fmt.Println("---------------------------")
+		fmt.Println("1: Вывод информации сервера")
+		fmt.Println("2: Запрос архивных данных")
+		fmt.Println("3: Завершение работы")
+		fmt.Print("Выбор действия-> ")
+		_, err := fmt.Scanln(&str)
 		if err != nil {
-			fmt.Println("Ошибка:", err)
-			fmt.Println("Работа прервана")
+			log.Fatal("Ошибка ввода данных")
+		}
+		fmt.Println("---------------------------")
+
+		switch str {
+		case "1": // Вывод статусной информации сервера
+			err := showStatusServer(usr)
+			if err != nil {
+				fmt.Println("Ошибка:", err)
+				fmt.Println("Работа прервана")
+				return
+			}
+			continue
+
+		case "2": // Запрос архивных данных
+			fmt.Println()
+			fmt.Print("Введите дату экспорта (YYYY-MM-DD): ")
+			fmt.Scanln(&str)
+
+			err := expDataDB(str, usr)
+			if err != nil {
+				fmt.Println("Ошибка при экспорте данных из БД", err)
+				fmt.Println("Работа прервана")
+				return
+			}
+			fmt.Println("Экспорт данных выполнен")
+			fmt.Println()
+			continue
+
+		case "3": // Завершение работы
+			return
+
+		default: // Ошибка ввода пользователя
+			fmt.Println("Ошибка ввода. Работа завершена")
 			return
 		}
-	case "2":
-		fmt.Println()
-		fmt.Print("Введите дату экспорта (YYYY-MM-DD): ")
-		fmt.Scanln(&str)
-
-		err := expDataDB(str)
-		if err != nil {
-			fmt.Println("Ошибка при экспорте данных из БД", err)
-			fmt.Println("Работа прервана")
-			return
-		}
-
-		fmt.Println("Экспорт данных выполнен")
-
-	case "3":
-		return
-
-	default:
-		fmt.Println("Ошибка ввода. Работа завершена")
-		return
 	}
+
 }
 
 // Запрос состояния сервера и вывод в терминал. Функция возвращает ошибку.
-func showStatusServer() error {
+func showStatusServer(usr *clientapi.UserLogin) error {
 
 	statusSrv := clientapi.RxStatusSrv{}
 
-	err := statusSrv.ReqStatusServer()
+	err := statusSrv.ReqStatusServer(usr.Token)
 	if err != nil {
 		return fmt.Errorf("ошибка при запросе состояния сервера: %v", err)
 	}
@@ -119,7 +137,7 @@ func showStatusServer() error {
 }
 
 // Запрос архивных данных БД. Функция возвращает ошибку
-func expDataDB(startDate string) error {
+func expDataDB(startDate string, usr *clientapi.UserLogin) error {
 
 	// Проверка корректности ввода даты
 	t, err := time.Parse("2006-01-02", startDate)
@@ -132,7 +150,7 @@ func expDataDB(startDate string) error {
 	dataDB.StartDate = startDate
 
 	// Запрос архивных данных БД
-	err = dataDB.ReqDataDB()
+	err = dataDB.ReqDataDB(usr.Token)
 	if err != nil {
 		return fmt.Errorf("ошибка запроса архивных данных ДБ: {%v}", err)
 	}
@@ -152,7 +170,9 @@ func saveDataXlsx(data clientapi.RxDataDB) (err error) {
 	tn := time.Now().Format("02.01.2006-15:04:05")
 
 	// Создание файла
-	fileName, err := libre.CreateXlsx("./", "exportData", tn, ".xlsx")
+	fName := fmt.Sprintf("exportData:%s------------", data.StartDate)
+
+	fileName, err := libre.CreateXlsx("./", fName, tn, ".xlsx")
 	if err != nil {
 		return fmt.Errorf("ошибка при создании xlsx файла экспорта: {%v}", err)
 	}
@@ -216,4 +236,33 @@ func saveDataXlsx(data clientapi.RxDataDB) (err error) {
 	}
 
 	return nil
+}
+
+// Ввод данных пользователя при запуске приложения.
+//
+// Параметры:
+//
+// user - указатель на данные пользователя
+func typeUserData(usr *clientapi.UserLogin) {
+
+	fd := int(syscall.Stdin)
+
+	fmt.Println("Необходима регистрация на сервере.")
+	fmt.Print("Имя пользователя: ")
+	data, err := term.ReadPassword(fd)
+	if err != nil {
+		log.Fatal(err)
+	}
+	usr.Name = string(data)
+	fmt.Println()
+
+	fmt.Print("Пароль пользователя: ")
+	data, err = term.ReadPassword(fd)
+	if err != nil {
+		log.Fatal(err)
+	}
+	usr.Password = string(data)
+
+	fmt.Println()
+	fmt.Println()
 }

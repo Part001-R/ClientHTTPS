@@ -1,9 +1,11 @@
 package clientapi
 
 import (
+	"bytes"
 	"crypto/tls"
 	"crypto/x509"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"log"
@@ -51,10 +53,17 @@ type (
 		Qual      string
 		TimeStamp string
 	}
+
+	// Регистрация на сервере
+	UserLogin struct {
+		Token    string
+		Name     string
+		Password string
+	}
 )
 
 // Получение статуса сервера. Возвращается ошибка.
-func (rx *RxStatusSrv) ReqStatusServer() error {
+func (rx *RxStatusSrv) ReqStatusServer(token string) error {
 
 	u := "https://" + os.Getenv("HTTPS_SERVER_IP") + ":" + os.Getenv("HTTPS_SERVER_PORT") + "/status"
 
@@ -62,6 +71,8 @@ func (rx *RxStatusSrv) ReqStatusServer() error {
 	if err != nil {
 		return fmt.Errorf("ошибка создания запроса: %v", err)
 	}
+
+	req.Header.Set("authorization", token)
 
 	client, err := createHttpsClient()
 	if err != nil {
@@ -90,7 +101,7 @@ func (rx *RxStatusSrv) ReqStatusServer() error {
 }
 
 // Получение архивных данных БД. Возвращается ошибка
-func (rx *RxDataDB) ReqDataDB() error {
+func (rx *RxDataDB) ReqDataDB(token string) error {
 
 	u := fmt.Sprintf("https://%s:%s/datadb", os.Getenv("HTTPS_SERVER_IP"), os.Getenv("HTTPS_SERVER_PORT"))
 
@@ -108,6 +119,8 @@ func (rx *RxDataDB) ReqDataDB() error {
 	if err != nil {
 		return fmt.Errorf("ошибка формирования запроса: {%v}", err)
 	}
+
+	req.Header.Set("authorization", token)
 
 	client, err := createHttpsClient()
 	if err != nil {
@@ -162,4 +175,47 @@ func createHttpsClient() (client *http.Client, err error) {
 	}
 
 	return client, nil
+}
+
+// Регистрация на сервере
+func (user *UserLogin) LoginHttpsServer() error {
+
+	u := "https://" + os.Getenv("HTTPS_SERVER_IP") + ":" + os.Getenv("HTTPS_SERVER_PORT") + "/registration"
+	body := bytes.NewBuffer([]byte(fmt.Sprintf("%s %s", user.Name, user.Password)))
+
+	// Формирование запроса
+	req, err := http.NewRequest(http.MethodPost, u, body)
+	if err != nil {
+		return errors.New("login -> ошибка при создании запроса регистрации на сервере")
+	}
+
+	// Создание https клиента.
+	client, err := createHttpsClient()
+	if err != nil {
+		return fmt.Errorf("login -> ошибка создания клиента при запросе данных: {%v}", err)
+	}
+
+	// Запрос
+	resp, err := client.Do(req)
+	if err != nil {
+		return errors.New("login -> ошибка при выполнении запроса к https серверу")
+	}
+
+	// Ответ
+	respBody, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return errors.New("login -> ошибка при чтении тела ответа сервера")
+	}
+	defer func() {
+		_ = resp.Body.Close()
+	}()
+
+	// Проверка результата и фиксация данных
+	if resp.StatusCode == http.StatusOK {
+		user.Token = string(respBody)
+		return nil
+	}
+
+	user.Token = ""
+	return errors.New("login -> регистрация пользователя не выполнена")
 }
