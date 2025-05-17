@@ -63,11 +63,22 @@ type (
 )
 
 // Получение статуса сервера. Возвращается ошибка.
-func (rx *RxStatusSrv) ReqStatusServer(token string) error {
+func (rx *RxStatusSrv) ReqStatusServer(token, name string) error {
 
 	u := "https://" + os.Getenv("HTTPS_SERVER_IP") + ":" + os.Getenv("HTTPS_SERVER_PORT") + "/status"
 
-	req, err := http.NewRequest(http.MethodGet, u, nil)
+	// Добавление имени пользователя в параметры запроса
+	pURL, err := url.Parse(u)
+	if err != nil {
+		return fmt.Errorf("ошибка при парсинге URL: %v", err)
+	}
+	qPrm := url.Values{}
+	qPrm.Set("name", name)
+
+	pURL.RawQuery = qPrm.Encode()
+
+	// Формирование запроса
+	req, err := http.NewRequest(http.MethodGet, pURL.String(), nil)
 	if err != nil {
 		return fmt.Errorf("ошибка создания запроса: %v", err)
 	}
@@ -87,6 +98,10 @@ func (rx *RxStatusSrv) ReqStatusServer(token string) error {
 		_ = resp.Body.Close()
 	}()
 
+	if resp.StatusCode != http.StatusOK {
+		return fmt.Errorf("нет успешности запроса")
+	}
+
 	respBody, err := io.ReadAll(resp.Body)
 	if err != nil {
 		return fmt.Errorf("ошибка при чтении тела ответа: %v", err)
@@ -101,7 +116,7 @@ func (rx *RxStatusSrv) ReqStatusServer(token string) error {
 }
 
 // Получение архивных данных БД. Возвращается ошибка
-func (rx *RxDataDB) ReqDataDB(token string) error {
+func (rx *RxDataDB) ReqDataDB(token, name string) error {
 
 	u := fmt.Sprintf("https://%s:%s/datadb", os.Getenv("HTTPS_SERVER_IP"), os.Getenv("HTTPS_SERVER_PORT"))
 
@@ -111,7 +126,8 @@ func (rx *RxDataDB) ReqDataDB(token string) error {
 	}
 
 	rawQ := url.Values{}
-	rawQ.Add("startdate", rx.StartDate)
+	rawQ.Set("startdate", rx.StartDate)
+	rawQ.Set("name", name)
 
 	parseU.RawQuery = rawQ.Encode()
 

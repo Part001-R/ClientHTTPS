@@ -100,7 +100,7 @@ func showStatusServer(usr *clientapi.UserLogin) error {
 
 	statusSrv := clientapi.RxStatusSrv{}
 
-	err := statusSrv.ReqStatusServer(usr.Token)
+	err := statusSrv.ReqStatusServer(usr.Token, usr.Name)
 	if err != nil {
 		return fmt.Errorf("ошибка при запросе состояния сервера: %v", err)
 	}
@@ -150,7 +150,7 @@ func expDataDB(startDate string, usr *clientapi.UserLogin) error {
 	dataDB.StartDate = startDate
 
 	// Запрос архивных данных БД
-	err = dataDB.ReqDataDB(usr.Token)
+	err = dataDB.ReqDataDB(usr.Token, usr.Name)
 	if err != nil {
 		return fmt.Errorf("ошибка запроса архивных данных ДБ: {%v}", err)
 	}
