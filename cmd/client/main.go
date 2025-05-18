@@ -6,6 +6,8 @@ import (
 	"errors"
 	"fmt"
 	"log"
+	"net/http"
+	"os"
 	"syscall"
 	"time"
 
@@ -17,34 +19,47 @@ import (
 func main() {
 	var user clientapi.UserLogin
 
-	prepare(&user)
-	run(&user)
+	clientHttps, userInfo := prepare(&user)
+
+	run(clientHttps, userInfo)
 }
 
 // Подготовительные действия
-func prepare(usr *clientapi.UserLogin) {
+func prepare(usr *clientapi.UserLogin) (client *http.Client, userInfo clientapi.UserLogin) {
 
 	// Чтение переменных окружения
 	err := godotenv.Load("./configs/.env")
 	if err != nil {
-		log.Fatal("ошибка чтения переменных окружения:", err)
+		log.Fatalf("ошибка чтения переменных окружения: {%v}\n", err)
+	}
+
+	// Создание Https клиента
+	client, err = clientapi.CreateHttpsClient()
+	if err != nil {
+		log.Fatalf("ошибка создания https клиента: {%v}\n", err)
 	}
 
 	// Ввод данных пользователя при запуске приложения
-	typeUserData(usr)
+	err = typeUserData(usr)
+	if err != nil {
+		log.Fatalf("ошибка ввода данных при старте приложения: {%v}\n", err)
+	}
 
 	// Регистрация на сервере и получение токена
-	err = usr.LoginHttpsServer()
+	u := "https://" + os.Getenv("HTTPS_SERVER_IP") + ":" + os.Getenv("HTTPS_SERVER_PORT") + "/registration"
+
+	userInfo, err = clientapi.ReqLoginServer(usr.Name, usr.Password, u, client)
 	if err != nil {
-		log.Fatal("Ошибка регистрации на сервере: ", err)
+		log.Fatalf("Ошибка регистрации на сервере: {%v}\n", err)
 	}
 	fmt.Println("Регистрация пользователя выполнена")
 	fmt.Println()
 
+	return client, userInfo
 }
 
 // Вывод меню действия
-func run(usr *clientapi.UserLogin) {
+func run(client *http.Client, usr clientapi.UserLogin) {
 	var str string
 
 	for {
@@ -61,7 +76,17 @@ func run(usr *clientapi.UserLogin) {
 
 		switch str {
 		case "1": // Вывод статусной информации сервера
-			err := showStatusServer(usr)
+
+			// Запрос данных сервера
+			u := fmt.Sprintf("https://%s:%s/status", os.Getenv("HTTPS_SERVER_IP"), os.Getenv("HTTPS_SERVER_PORT"))
+
+			statusSrv, err := clientapi.ReqStatusServer(usr.Token, usr.Name, u, client)
+			if err != nil {
+				log.Fatalf("ошибка при запросе состояния сервера: {%v}\n", err)
+			}
+
+			// Отображение принятых данных
+			err = showStatusServer(statusSrv)
 			if err != nil {
 				fmt.Println("Ошибка:", err)
 				fmt.Println("Работа прервана")
@@ -74,12 +99,25 @@ func run(usr *clientapi.UserLogin) {
 			fmt.Print("Введите дату экспорта (YYYY-MM-DD): ")
 			fmt.Scanln(&str)
 
-			err := expDataDB(str, usr)
+			// Запрос архивных данных сервера
+			u := fmt.Sprintf("https://%s:%s/datadb", os.Getenv("HTTPS_SERVER_IP"), os.Getenv("HTTPS_SERVER_PORT"))
+
+			dataRx, cntStr, err := clientapi.ReqDataDB(usr.Token, usr.Name, str, u, client)
 			if err != nil {
-				fmt.Println("Ошибка при экспорте данных из БД", err)
+				fmt.Println("Ошибка:", err)
 				fmt.Println("Работа прервана")
 				return
 			}
+
+			// Формирование Exlx файла данных
+			err = saveDataXlsx(dataRx)
+			if err != nil {
+				fmt.Printf("ошибка при сохранении данных в xlsx файл: {%v}", err)
+				fmt.Println("Работа прервана")
+				return
+			}
+
+			fmt.Printf("Принято {%s} строк\n", cntStr)
 			fmt.Println("Экспорт данных выполнен")
 			fmt.Println()
 			continue
@@ -96,14 +134,7 @@ func run(usr *clientapi.UserLogin) {
 }
 
 // Запрос состояния сервера и вывод в терминал. Функция возвращает ошибку.
-func showStatusServer(usr *clientapi.UserLogin) error {
-
-	statusSrv := clientapi.RxStatusSrv{}
-
-	err := statusSrv.ReqStatusServer(usr.Token, usr.Name)
-	if err != nil {
-		return fmt.Errorf("ошибка при запросе состояния сервера: %v", err)
-	}
+func showStatusServer(statusSrv clientapi.RxStatusSrv) error {
 
 	fmt.Println()
 	fmt.Println("Время запуска сервера :", statusSrv.TimeStart)
@@ -132,34 +163,6 @@ func showStatusServer(usr *clientapi.UserLogin) error {
 	fmt.Printf("Размер в МБ файла логирования - Предупреждение:{%d}\n", statusSrv.SizeF.W)
 	fmt.Printf("Размер в МБ файла логирования - Ошибки        :{%d}\n", statusSrv.SizeF.E)
 	fmt.Println()
-
-	return nil
-}
-
-// Запрос архивных данных БД. Функция возвращает ошибку
-func expDataDB(startDate string, usr *clientapi.UserLogin) error {
-
-	// Проверка корректности ввода даты
-	t, err := time.Parse("2006-01-02", startDate)
-	if err != nil {
-		return fmt.Errorf("ошибка ввода даты: {%s}", t)
-	}
-
-	var dataDB clientapi.RxDataDB
-
-	dataDB.StartDate = startDate
-
-	// Запрос архивных данных БД
-	err = dataDB.ReqDataDB(usr.Token, usr.Name)
-	if err != nil {
-		return fmt.Errorf("ошибка запроса архивных данных ДБ: {%v}", err)
-	}
-
-	// Формирование Exlx файла данных
-	err = saveDataXlsx(dataDB)
-	if err != nil {
-		return fmt.Errorf("ошибка при сохранении данных в xlsx файл: {%v}", err)
-	}
 
 	return nil
 }
@@ -242,8 +245,8 @@ func saveDataXlsx(data clientapi.RxDataDB) (err error) {
 //
 // Параметры:
 //
-// user - указатель на данные пользователя
-func typeUserData(usr *clientapi.UserLogin) {
+// user - указатель на данные пользователя. Возвращается ошибка.
+func typeUserData(usr *clientapi.UserLogin) error {
 
 	fd := int(syscall.Stdin)
 
@@ -251,7 +254,7 @@ func typeUserData(usr *clientapi.UserLogin) {
 	fmt.Print("Имя пользователя: ")
 	data, err := term.ReadPassword(fd)
 	if err != nil {
-		log.Fatal(err)
+		return fmt.Errorf("ошибка при чтении имени: {%v}", err)
 	}
 	usr.Name = string(data)
 	fmt.Println()
@@ -259,10 +262,11 @@ func typeUserData(usr *clientapi.UserLogin) {
 	fmt.Print("Пароль пользователя: ")
 	data, err = term.ReadPassword(fd)
 	if err != nil {
-		log.Fatal(err)
+		return fmt.Errorf("ошибка при чтении пароля: {%v}", err)
 	}
 	usr.Password = string(data)
 
 	fmt.Println()
 	fmt.Println()
+	return nil
 }

@@ -12,6 +12,7 @@ import (
 	"net/http"
 	"net/url"
 	"os"
+	"time"
 )
 
 type (
@@ -62,15 +63,31 @@ type (
 	}
 )
 
-// Получение статуса сервера. Возвращается ошибка.
-func (rx *RxStatusSrv) ReqStatusServer(token, name string) error {
+// Получение статуса сервера. Возвращается ошибка. Возвращаются данные сервера и ошибка.
+//
+// Парметры:
+//
+// token - токен пользователя
+// name - имя пользователя
+// u - URL
+// client - указатель на созданный https клиент
+func ReqStatusServer(token, name, u string, client *http.Client) (dataRx RxStatusSrv, err error) {
 
-	u := "https://" + os.Getenv("HTTPS_SERVER_IP") + ":" + os.Getenv("HTTPS_SERVER_PORT") + "/status"
+	// Проверка аргементов
+	if token == "" {
+		log.Fatal("Запрос статуса сервера -> пустое значение аргумента token")
+	}
+	if name == "" {
+		log.Fatal("Запрос статуса сервера -> пустое значение аргумента name")
+	}
+	if client == nil {
+		log.Fatal("Запрос статуса сервера -> нет ссылки на https клиент")
+	}
 
 	// Добавление имени пользователя в параметры запроса
 	pURL, err := url.Parse(u)
 	if err != nil {
-		return fmt.Errorf("ошибка при парсинге URL: %v", err)
+		return RxStatusSrv{}, fmt.Errorf("ошибка при парсинге URL: %v", err)
 	}
 	qPrm := url.Values{}
 	qPrm.Set("name", name)
@@ -80,103 +97,186 @@ func (rx *RxStatusSrv) ReqStatusServer(token, name string) error {
 	// Формирование запроса
 	req, err := http.NewRequest(http.MethodGet, pURL.String(), nil)
 	if err != nil {
-		return fmt.Errorf("ошибка создания запроса: %v", err)
+		return RxStatusSrv{}, fmt.Errorf("ошибка создания запроса: %v", err)
 	}
 
 	req.Header.Set("authorization", token)
 
-	client, err := createHttpsClient()
-	if err != nil {
-		return fmt.Errorf("ошибка создания клиента при запросе состояния: {%v}", err)
-	}
-
 	resp, err := client.Do(req)
 	if err != nil {
-		return fmt.Errorf("ошибка Get запроса: %v", err)
+		return RxStatusSrv{}, fmt.Errorf("ошибка Get запроса: %v", err)
 	}
 	defer func() {
 		_ = resp.Body.Close()
 	}()
 
 	if resp.StatusCode != http.StatusOK {
-		return fmt.Errorf("нет успешности запроса")
+		return RxStatusSrv{}, fmt.Errorf("нет успешности запроса")
 	}
 
 	respBody, err := io.ReadAll(resp.Body)
 	if err != nil {
-		return fmt.Errorf("ошибка при чтении тела ответа: %v", err)
+		return RxStatusSrv{}, fmt.Errorf("ошибка при чтении тела ответа: %v", err)
 	}
 
-	err = json.Unmarshal(respBody, rx)
+	err = json.Unmarshal(respBody, &dataRx)
 	if err != nil {
-		return fmt.Errorf("ошибка обработки данных ответа: %v", err)
+		return RxStatusSrv{}, fmt.Errorf("ошибка обработки данных ответа: %v", err)
 	}
 
-	return nil
+	return dataRx, nil
 }
 
-// Получение архивных данных БД. Возвращается ошибка
-func (rx *RxDataDB) ReqDataDB(token, name string) error {
+// Получение архивных данных БД. Возвращаются данные сервера и ошибка.
+//
+// Парметры:
+//
+// token - токен пользователя
+// name - имя пользователя
+// startDate - дата для выполнения экспорта данных
+// u - URL
+// client - указатель на созданный https клиент
+func ReqDataDB(token, name, startDate, u string, client *http.Client) (dataRx RxDataDB, cntStr string, err error) {
 
-	u := fmt.Sprintf("https://%s:%s/datadb", os.Getenv("HTTPS_SERVER_IP"), os.Getenv("HTTPS_SERVER_PORT"))
+	// Проверка аргементов
+	if token == "" {
+		return RxDataDB{}, "", errors.New("запрос архивных данных -> пустое значение аргумента token")
+	}
+	if name == "" {
+		return RxDataDB{}, "", errors.New("запрос архивных данных -> пустое значение аргумента name")
+	}
+	if client == nil {
+		return RxDataDB{}, "", errors.New("запрос архивных данных -> нет ссылки на https клиент")
+	}
+	_, err = time.Parse("2006-01-02", startDate)
+	if err != nil {
+		return RxDataDB{}, "", errors.New("запрос архивных данных -> дата экспорта не в формате (YYYY-MM-DD)")
+	}
+	if u == "" {
+		return RxDataDB{}, "", errors.New("запрос архивных данных -> пустое значение аргумента URL")
+	}
 
 	parseU, err := url.Parse(u)
 	if err != nil {
-		return fmt.Errorf("ошибка парсинга URL при запросе архивных данных БД: {%v}", err)
+		return RxDataDB{}, "", fmt.Errorf("запрос архивных данных -> ошибка парсинга URL при запросе архивных данных БД: {%v}", err)
 	}
 
 	rawQ := url.Values{}
-	rawQ.Set("startdate", rx.StartDate)
+	rawQ.Set("startdate", startDate)
 	rawQ.Set("name", name)
 
 	parseU.RawQuery = rawQ.Encode()
 
 	req, err := http.NewRequest(http.MethodGet, parseU.String(), nil)
 	if err != nil {
-		return fmt.Errorf("ошибка формирования запроса: {%v}", err)
+		return RxDataDB{}, "", fmt.Errorf("запрос архивных данных -> ошибка формирования запроса: {%v}", err)
 	}
 
 	req.Header.Set("authorization", token)
 
-	client, err := createHttpsClient()
-	if err != nil {
-		return fmt.Errorf("ошибка создания клиента при запросе данных: {%v}", err)
-	}
-
 	resp, err := client.Do(req)
 	if err != nil {
-		return fmt.Errorf("ошибка выполнения запроса к серверу: {%v}", err)
+		return RxDataDB{}, "", fmt.Errorf("запрос архивных данных -> ошибка выполнения запроса к серверу: {%v}", err)
+	}
+
+	// Проверка статус кода ответа сервера
+	if resp.StatusCode != http.StatusOK {
+		return RxDataDB{}, "", fmt.Errorf("запрос архивных данных -> нет успешности запроса")
+	}
+
+	cntStr = resp.Header.Get("Count-Strings")
+	if cntStr == "" {
+		return RxDataDB{}, "", fmt.Errorf("запрос архивных данных -> нет данных о количестве записей")
 	}
 
 	dataResp, err := io.ReadAll(resp.Body)
 	if err != nil {
-		return fmt.Errorf("ошибка чтения тела ответа: {%v}", err)
+		return RxDataDB{}, "", fmt.Errorf("запрос архивных данных -> ошибка чтения тела ответа: {%v}", err)
 	}
 	defer func() {
 		_ = resp.Body.Close()
 	}()
 
-	err = json.Unmarshal(dataResp, &rx)
+	err = json.Unmarshal(dataResp, &dataRx)
 	if err != nil {
-		return fmt.Errorf("ошибка при десериализации принятых данных от сервера: {%v}", err)
+		return RxDataDB{}, "", fmt.Errorf("запрос архивных данных -> ошибка при десериализации принятых данных от сервера: {%v}", err)
 	}
 
-	return nil
+	return dataRx, cntStr, nil
 }
 
-// Создание HTTPS клиента. Функция возвращает клиента и ошибку
-func createHttpsClient() (client *http.Client, err error) {
+// Регистрация на сервере. Возвращается ошибка.
+//
+// Параметры:
+//
+// name - имя пользователя
+// password - пароль пользователя
+// u - URL
+// client - указатель на https клиент
+func ReqLoginServer(name, password, u string, client *http.Client) (user UserLogin, err error) {
+
+	// Проверка аргументов
+	if name == "" {
+		return UserLogin{}, errors.New("login -> нет содержимого в аргументе name")
+	}
+	if password == "" {
+		return UserLogin{}, errors.New("login -> нет содержимого в аргументе password")
+	}
+	if u == "" {
+		return UserLogin{}, errors.New("login -> нет содержимого в аргументе u")
+	}
+	if client == nil {
+		return UserLogin{}, errors.New("login -> нет содержимого в указателе на Http клиент")
+	}
+
+	body := bytes.NewBuffer([]byte(fmt.Sprintf("%s %s", name, password)))
+
+	// Формирование запроса
+	req, err := http.NewRequest(http.MethodPost, u, body)
+	if err != nil {
+		return UserLogin{}, errors.New("login -> ошибка при создании запроса регистрации на сервере")
+	}
+
+	// Запрос
+	resp, err := client.Do(req)
+	if err != nil {
+		return UserLogin{}, errors.New("login -> ошибка при выполнении запроса к https серверу")
+	}
+
+	// Проверка статус-кода ответа
+	if resp.StatusCode != http.StatusOK {
+		return UserLogin{}, errors.New("login -> ошибка, сервер не вернул код 200")
+	}
+
+	// Ответ
+	respBody, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return UserLogin{}, errors.New("login -> ошибка при чтении тела ответа сервера")
+	}
+	defer func() {
+		_ = resp.Body.Close()
+	}()
+
+	// Фиксация данных
+	user.Token = string(respBody)
+	user.Name = name
+	return user, nil
+
+}
+
+// Создание HTTPS клиента. Функция возвращает https клиент и ошибку
+func CreateHttpsClient() (client *http.Client, err error) {
 
 	// Загрузка сертификатов
 	certPool := x509.NewCertPool()
 
-	// Путь к сертификату CA
+	// Путь к сертификату
 	cacert, err := os.ReadFile(os.Getenv("HTTPS_SERVER_KEY_PUBLIC"))
 	if err != nil {
 		log.Fatalf("ошибка при чтении CA-сертификата: %v", err)
 	}
 
-	// Добавляем CA-сертификат в пул доверенных сертификатов
+	// Добавление сертификатав пул доверенных сертификатов
 	if ok := certPool.AppendCertsFromPEM(cacert); !ok {
 		log.Fatal("не удалось добавить CA-сертификат в пул")
 	}
@@ -185,53 +285,10 @@ func createHttpsClient() (client *http.Client, err error) {
 	client = &http.Client{
 		Transport: &http.Transport{
 			TLSClientConfig: &tls.Config{
-				RootCAs: certPool, // Указываем пул сертификатов CA
+				RootCAs: certPool, // пул сертификатов CA
 			},
 		},
 	}
 
 	return client, nil
-}
-
-// Регистрация на сервере
-func (user *UserLogin) LoginHttpsServer() error {
-
-	u := "https://" + os.Getenv("HTTPS_SERVER_IP") + ":" + os.Getenv("HTTPS_SERVER_PORT") + "/registration"
-	body := bytes.NewBuffer([]byte(fmt.Sprintf("%s %s", user.Name, user.Password)))
-
-	// Формирование запроса
-	req, err := http.NewRequest(http.MethodPost, u, body)
-	if err != nil {
-		return errors.New("login -> ошибка при создании запроса регистрации на сервере")
-	}
-
-	// Создание https клиента.
-	client, err := createHttpsClient()
-	if err != nil {
-		return fmt.Errorf("login -> ошибка создания клиента при запросе данных: {%v}", err)
-	}
-
-	// Запрос
-	resp, err := client.Do(req)
-	if err != nil {
-		return errors.New("login -> ошибка при выполнении запроса к https серверу")
-	}
-
-	// Ответ
-	respBody, err := io.ReadAll(resp.Body)
-	if err != nil {
-		return errors.New("login -> ошибка при чтении тела ответа сервера")
-	}
-	defer func() {
-		_ = resp.Body.Close()
-	}()
-
-	// Проверка результата и фиксация данных
-	if resp.StatusCode == http.StatusOK {
-		user.Token = string(respBody)
-		return nil
-	}
-
-	user.Token = ""
-	return errors.New("login -> регистрация пользователя не выполнена")
 }
