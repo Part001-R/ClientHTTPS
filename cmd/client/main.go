@@ -95,30 +95,50 @@ func run(client *http.Client, usr clientapi.UserLogin) {
 			continue
 
 		case "2": // Запрос архивных данных
+			var date string
 			fmt.Println()
 			fmt.Print("Введите дату экспорта (YYYY-MM-DD): ")
-			fmt.Scanln(&str)
+			fmt.Scanln(&date)
 
-			// Запрос архивных данных сервера
-			u := fmt.Sprintf("https://%s:%s/datadb", os.Getenv("HTTPS_SERVER_IP"), os.Getenv("HTTPS_SERVER_PORT"))
+			// Запрос количества строк по дате
+			u := fmt.Sprintf("https://%s:%s/cntstr", os.Getenv("HTTPS_SERVER_IP"), os.Getenv("HTTPS_SERVER_PORT"))
 
-			dataRx, cntStr, err := clientapi.ReqDataDB(usr.Token, usr.Name, str, u, client)
+			cntStr, err := clientapi.ReqCntStrByDateDB(usr.Token, usr.Name, date, u, client)
 			if err != nil {
-				fmt.Println("Ошибка:", err)
+				fmt.Println("Ошибка: ", err)
+				fmt.Println("Работа прервана")
+				return
+			}
+			fmt.Printf("По дате {%s} содержится {%d} строк\n", date, cntStr)
+
+			// Выполнение очереди запросов на получение строк
+			u = fmt.Sprintf("https://%s:%s/partdatadb", os.Getenv("HTTPS_SERVER_IP"), os.Getenv("HTTPS_SERVER_PORT"))
+
+			rxData, err := clientapi.QueReqPartDataDB(date, usr.Token, usr.Name, u, cntStr, client)
+			if err != nil {
+				fmt.Println("Ошибка: ", err)
 				fmt.Println("Работа прервана")
 				return
 			}
 
+			// Подготовка данных для сохранения
+			forSave := clientapi.RxDataDB{
+				StartDate: str,
+				Data:      make([]clientapi.DataEl, 0),
+			}
+			for _, v := range rxData {
+				forSave.Data = append(forSave.Data, v.Data...)
+			}
+
 			// Формирование Exlx файла данных
-			err = saveDataXlsx(dataRx)
+			err = saveDataXlsx(forSave)
 			if err != nil {
 				fmt.Printf("ошибка при сохранении данных в xlsx файл: {%v}", err)
 				fmt.Println("Работа прервана")
 				return
 			}
 
-			fmt.Printf("Принято {%s} строк\n", cntStr)
-			fmt.Println("Экспорт данных выполнен")
+			fmt.Println("Задача выполнена.")
 			fmt.Println()
 			continue
 
@@ -214,19 +234,19 @@ func saveDataXlsx(data clientapi.RxDataDB) (err error) {
 
 		i++
 
-		err = file.SetCellValue(nameSheet, fmt.Sprintf("A%d", i), str.Name)
+		err = file.SetCellValue(nameSheet, fmt.Sprintf("A%d", i+1), str.Name)
 		if err != nil {
 			return fmt.Errorf("ошибка добавления значения {%s} в ячейку {A%d}", str.Name, i)
 		}
-		err = file.SetCellValue(nameSheet, fmt.Sprintf("B%d", i), str.Value)
+		err = file.SetCellValue(nameSheet, fmt.Sprintf("B%d", i+1), str.Value)
 		if err != nil {
 			return fmt.Errorf("ошибка добавления значения {%s} в ячейку {B%d}", str.Value, i)
 		}
-		err = file.SetCellValue(nameSheet, fmt.Sprintf("C%d", i), str.Qual)
+		err = file.SetCellValue(nameSheet, fmt.Sprintf("C%d", i+1), str.Qual)
 		if err != nil {
 			return fmt.Errorf("ошибка добавления значения {%s} в ячейку {C%d}", str.Qual, i)
 		}
-		err = file.SetCellValue(nameSheet, fmt.Sprintf("D%d", i), str.TimeStamp)
+		err = file.SetCellValue(nameSheet, fmt.Sprintf("D%d", i+1), str.TimeStamp)
 		if err != nil {
 			return fmt.Errorf("ошибка добавления значения {%s} в ячейку {D%d}", str.TimeStamp, i)
 		}
