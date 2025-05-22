@@ -3,16 +3,13 @@ package main
 import (
 	clientapi "clienthttps/internal/client/clientAPI"
 	"clienthttps/internal/client/libre"
-	"errors"
 	"fmt"
 	"log"
 	"net/http"
 	"os"
 	"syscall"
-	"time"
 
 	"github.com/joho/godotenv"
-	"github.com/xuri/excelize/v2"
 	"golang.org/x/term"
 )
 
@@ -131,7 +128,7 @@ func run(client *http.Client, usr clientapi.UserLogin) {
 
 			// Подготовка данных для сохранения
 			forSave := clientapi.RxDataDB{
-				StartDate: str,
+				StartDate: date,
 				Data:      make([]clientapi.DataEl, 0),
 			}
 			for _, v := range rxData {
@@ -139,14 +136,14 @@ func run(client *http.Client, usr clientapi.UserLogin) {
 			}
 
 			// Формирование Exlx файла данных
-			err = saveDataXlsx(forSave, date)
+			fileName, err := libre.SaveDataXlsx(forSave)
 			if err != nil {
 				fmt.Printf("ошибка при сохранении данных в xlsx файл: {%v}", err)
 				fmt.Println("Работа прервана")
 				return
 			}
 
-			fmt.Println("Задача выполнена.")
+			fmt.Printf("Задача выполнена. Создан файл - %s", fileName)
 			fmt.Println()
 			continue
 
@@ -193,85 +190,6 @@ func showStatusServer(statusSrv clientapi.RxStatusSrv) error {
 	fmt.Printf("Размер в МБ файла логирования - Предупреждение:{%d}\n", statusSrv.SizeF.W)
 	fmt.Printf("Размер в МБ файла логирования - Ошибки        :{%d}\n", statusSrv.SizeF.E)
 	fmt.Println()
-
-	return nil
-}
-
-// Функция зодаёт xlsx файл и сохраняет туда принятые данные от сервера. Возвращает ошибку.
-//
-// Параметры:
-//
-// data - данные для сахранения
-// date - дата
-func saveDataXlsx(data clientapi.RxDataDB, date string) (err error) {
-
-	tn := time.Now().Format("02.01.2006-15:04:05")
-
-	// Создание файла
-	fName := fmt.Sprintf("exportData:%s------------", date)
-
-	fileName, err := libre.CreateXlsx("./", fName, tn, ".xlsx")
-	if err != nil {
-		return fmt.Errorf("ошибка при создании xlsx файла экспорта: {%v}", err)
-	}
-
-	// Открытие файла
-	file, err := excelize.OpenFile(fileName)
-	if err != nil {
-		return fmt.Errorf("ошибка при открытии файла: {%v}", fileName)
-	}
-
-	// Заполнение файла
-
-	nameSheet := "DataDB"
-
-	// Формирование заголовков
-	// Name: Value:	Quality: TimeStamp:
-	err = file.SetCellValue(nameSheet, "A1", "Name:")
-	if err != nil {
-		return errors.New("ошибка при добавлении заголовка столбца Name")
-	}
-	err = file.SetCellValue(nameSheet, "B1", "Value:")
-	if err != nil {
-		return errors.New("ошибка при добавлении заголовка столбца Value")
-	}
-	err = file.SetCellValue(nameSheet, "C1", "Quality:")
-	if err != nil {
-		return errors.New("ошибка при добавлении заголовка столбца Quality")
-	}
-	err = file.SetCellValue(nameSheet, "D1", "TimeStamp:")
-	if err != nil {
-		return errors.New("ошибка при добавлении заголовка столбца TimeStamp")
-	}
-
-	// Перенос данных
-	for i, str := range data.Data {
-
-		i++
-
-		err = file.SetCellValue(nameSheet, fmt.Sprintf("A%d", i+1), str.Name)
-		if err != nil {
-			return fmt.Errorf("ошибка добавления значения {%s} в ячейку {A%d}", str.Name, i)
-		}
-		err = file.SetCellValue(nameSheet, fmt.Sprintf("B%d", i+1), str.Value)
-		if err != nil {
-			return fmt.Errorf("ошибка добавления значения {%s} в ячейку {B%d}", str.Value, i)
-		}
-		err = file.SetCellValue(nameSheet, fmt.Sprintf("C%d", i+1), str.Qual)
-		if err != nil {
-			return fmt.Errorf("ошибка добавления значения {%s} в ячейку {C%d}", str.Qual, i)
-		}
-		err = file.SetCellValue(nameSheet, fmt.Sprintf("D%d", i+1), str.TimeStamp)
-		if err != nil {
-			return fmt.Errorf("ошибка добавления значения {%s} в ячейку {D%d}", str.TimeStamp, i)
-		}
-	}
-
-	// Сохрангение
-	err = file.Save()
-	if err != nil {
-		return errors.New("ошибка при сохранении Xlsx файла")
-	}
 
 	return nil
 }

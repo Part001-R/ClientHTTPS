@@ -2,7 +2,6 @@ package clientapi
 
 import (
 	"encoding/json"
-	"errors"
 	"fmt"
 	"io"
 	"net/http"
@@ -16,7 +15,7 @@ import (
 )
 
 // Тест регистрации - успешность
-func Test_ReqLoginServerSuccess(t *testing.T) {
+func Test_ReqLoginServer_Success(t *testing.T) {
 
 	// Подготовка данных
 	name := "userTest"
@@ -42,7 +41,7 @@ func Test_ReqLoginServerSuccess(t *testing.T) {
 }
 
 // Тест регистрации - ошибки
-func Test_ReqLoginServerError(t *testing.T) {
+func Test_ReqLoginServer_Error(t *testing.T) {
 
 	dataTest := []struct {
 		nameTest    string
@@ -120,7 +119,7 @@ func Test_ReqLoginServerError(t *testing.T) {
 }
 
 // Статусные данные сервера - успешность
-func Test_ReqStatusServerSuccess(t *testing.T) {
+func Test_ReqStatusServer_Success(t *testing.T) {
 
 	// Подготовка данных
 	token := "1234567890"
@@ -217,7 +216,7 @@ func Test_ReqStatusServerSuccess(t *testing.T) {
 }
 
 // Статусные данные сервера - ошибки
-func Test_ReqStatusServerError(t *testing.T) {
+func Test_ReqStatusServer_Error(t *testing.T) {
 
 	// Подготовка данных
 	token := "1234567890"
@@ -385,7 +384,7 @@ func Test_ReqStatusServerError(t *testing.T) {
 }
 
 // Запрос количество строк по дате - успешность
-func Test_ReqCntStrByDateDBSuccess(t *testing.T) {
+func Test_ReqCntStrByDateDB_Success(t *testing.T) {
 
 	token := "1234567890"
 	name := "test"
@@ -453,7 +452,7 @@ func Test_ReqCntStrByDateDBSuccess(t *testing.T) {
 }
 
 // Запрос количество строк по дате - ошибки
-func Test_ReqCntStrByDateDBError(t *testing.T) {
+func Test_ReqCntStrByDateDB_Error(t *testing.T) {
 
 	token := "1234567890"
 	cntStr := 100
@@ -610,7 +609,7 @@ func Test_ReqCntStrByDateDBError(t *testing.T) {
 }
 
 // Запрос архивных данных сервера - успешность
-func Test_ReqPartDataDBSuccess(t *testing.T) {
+func Test_ReqPartDataDB_Success(t *testing.T) {
 
 	numbReq := 0
 	strLimit := 34
@@ -708,7 +707,7 @@ func Test_ReqPartDataDBSuccess(t *testing.T) {
 }
 
 // Запрос архивных данных сервера - ошибки
-func Test_ReqPartDataDBError(t *testing.T) {
+func Test_ReqPartDataDB_Error(t *testing.T) {
 
 	userName := "test"
 
@@ -914,30 +913,60 @@ func Test_ReqPartDataDBError(t *testing.T) {
 
 }
 
-// Очередь запросов на загрузку архивных данных (если строк больше, либо ровно 100)
-func Test_QueReqPartDataDB_GE100str_Success(t *testing.T) {
+// Очередь запросов на загрузку архивных данных
+func Test_QueReqPartDataDB_Success(t *testing.T) {
+	usrName := "test"
+	usrToken := "1234567890"
 
-	date := "2025-05-01"
-	token := "1234567890"
-	name := "test"
-
-	// Имитация набора архивных данных БД
-
-	simDataDB := make([]DataEl, 0)
+	// Имитация набора архивных данных БД (3600 записей)
+	simDataDB3600 := make([]DataEl, 0)
 	for i := 0; i < 60; i++ {
 		for ii := 0; ii < 60; ii++ {
-
 			tStamp := fmt.Sprintf("2025-05-18T03:%d:%d.391321+07:00", i, ii)
 			str := DataEl{
-				Name:      "Dev3. HR. Тестовая переменная ShortInt",
+				Name:      "Dev3600. HR. Тестовая переменная ShortInt",
 				Value:     strconv.Itoa(i * ii),
 				Qual:      "1",
 				TimeStamp: tStamp,
 			}
-			simDataDB = append(simDataDB, str)
+			simDataDB3600 = append(simDataDB3600, str)
 		}
 	}
-	sizeDB := len(simDataDB)
+
+	// Данные для тесов
+	argData := []struct {
+		nameTest   string
+		startDate  string
+		token      string
+		name       string
+		cntStr     int
+		wantRxSize int
+	}{
+		{
+			nameTest:   "количество строк = 0",
+			startDate:  "2025-01-01",
+			token:      usrToken,
+			name:       usrName,
+			cntStr:     0,
+			wantRxSize: 0,
+		},
+		{
+			nameTest:   "количество строк = 100",
+			startDate:  "2025-01-01",
+			token:      usrToken,
+			name:       usrName,
+			cntStr:     100,
+			wantRxSize: 100,
+		},
+		{
+			nameTest:   "количество строк = 1000",
+			startDate:  "2025-01-01",
+			token:      usrToken,
+			name:       usrName,
+			cntStr:     1000,
+			wantRxSize: 1000,
+		},
+	}
 
 	// Сервер
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -982,10 +1011,10 @@ func Test_QueReqPartDataDB_GE100str_Success(t *testing.T) {
 
 		// Формирование данных для ответа
 		rdDataDB := make([]DataEl, 0)
-		for i := OffSet; i < len(simDataDB); i++ {
+		for i := OffSet; i < len(simDataDB3600); i++ {
 
 			if i < (OffSet + limit) {
-				rdDataDB = append(rdDataDB, simDataDB[i])
+				rdDataDB = append(rdDataDB, simDataDB3600[i])
 				continue
 			}
 			break
@@ -1006,75 +1035,150 @@ func Test_QueReqPartDataDB_GE100str_Success(t *testing.T) {
 		w.Write(txByte)
 	}))
 
-	// Запросы
-	rxData, err := func() (data []PartDataDB, err error) {
+	for _, tt := range argData {
+		rxData, err := QueReqPartDataDB(tt.startDate, tt.token, tt.name, server.URL, tt.cntStr, server.Client())
+		require.NoErrorf(t, err, "ожидалось отутствие ошибки, а принято: {%s}", fmt.Sprintf("%s", err))
 
-		collectRxDataDB := make([]PartDataDB, 0)
-
-		// Вычисление количества необходимых запросов
-		iter := len(simDataDB) / 100
-
-		if iter == 0 {
-
-			rxData, err := ReqPartDataDB(0, 100, 0, date, token, name, server.URL, server.Client())
-			if err != nil {
-				return []PartDataDB{}, errors.New("ошибка при выполнении запроса при количестве строк < 100")
-			}
-			collectRxDataDB = append(collectRxDataDB, rxData)
-
-		} else {
-
-			for i := 0; i < iter; i++ {
-
-				rxData, err := ReqPartDataDB(i, 100, 100*i, date, token, name, server.URL, server.Client())
-				if err != nil {
-					return []PartDataDB{}, fmt.Errorf("ошибка при выполнении запроса на итерации {%d}, {%v}", i, err)
-				}
-				collectRxDataDB = append(collectRxDataDB, rxData)
-				time.Sleep(10 * time.Millisecond) // установка небольшой паузы между очередным запросом
-			}
+		saveData := make([]DataEl, 0)
+		for _, v := range rxData {
+			saveData = append(saveData, v.Data...)
 		}
-		return collectRxDataDB, nil
-	}()
-	require.NoErrorf(t, err, "ожидалось отсутствие ошибки, а принято: {%v}", err)
-
-	// Подготовка для сохранения
-	saveData := make([]DataEl, 0)
-
-	for _, v := range rxData {
-		saveData = append(saveData, v.Data...)
+		rxCnt := len(saveData)
+		assert.Equalf(t, tt.wantRxSize, rxCnt, "ожидалось %d записей, а принято: %d", tt.wantRxSize, rxCnt)
 	}
-
-	rxCnt := len(saveData)
-	assert.Equalf(t, sizeDB, rxCnt, "ожидалось %d записей, а принято: %d", sizeDB, rxCnt)
 }
 
 // Очередь запросов на загрузку архивных данных (если строк меньше 100)
-func Test_QueReqPartDataDB_LT100str_Success(t *testing.T) {
+func Test_QueReqPartDataDB_Error(t *testing.T) {
 
-	date := "2025-05-01"
-	token := "1234567890"
-	name := "test"
+	usrName := "test"
+	usrToken := "1234567890"
 
-	// Имитация набора архивных данных БД
-
-	simDataDB := make([]DataEl, 0)
-
-	for ii := 0; ii < 60; ii++ {
-
-		tStamp := fmt.Sprintf("2025-05-18T03:00:%d.391321+07:00", ii)
+	// Имитация набора архивных данных БД (60 записей)
+	simDataDB60 := make([]DataEl, 0)
+	for i := 0; i < 60; i++ {
+		tStamp := fmt.Sprintf("2025-05-18T03:00:%d.391321+07:00", i)
 		str := DataEl{
-			Name:      "Dev3. HR. Тестовая переменная ShortInt",
-			Value:     strconv.Itoa(ii),
+			Name:      "Dev60. HR. Тестовая переменная ShortInt",
+			Value:     strconv.Itoa(i),
 			Qual:      "1",
 			TimeStamp: tStamp,
 		}
-		simDataDB = append(simDataDB, str)
+		simDataDB60 = append(simDataDB60, str)
+	}
+	sizeDB60 := len(simDataDB60)
+
+	// Имитация набора архивных данных БД (3600 записей)
+	simDataDB3600 := make([]DataEl, 0)
+	for i := 0; i < 60; i++ {
+		for ii := 0; ii < 60; ii++ {
+			tStamp := fmt.Sprintf("2025-05-18T03:%d:%d.391321+07:00", i, ii)
+			str := DataEl{
+				Name:      "Dev3600. HR. Тестовая переменная ShortInt",
+				Value:     strconv.Itoa(i * ii),
+				Qual:      "1",
+				TimeStamp: tStamp,
+			}
+			simDataDB3600 = append(simDataDB3600, str)
+		}
+	}
+	sizeDB3600 := len(simDataDB3600)
+	_ = sizeDB3600
+
+	// Данные для тесов
+	argData := []struct {
+		nameTest  string
+		startDate string
+		token     string
+		name      string
+		cntStr    int
+		useURL    string
+		useClient string
+		simData   []DataEl
+		wantErr   string
+	}{
+		{
+			nameTest:  "пустое значение даты",
+			startDate: "",
+			token:     usrToken,
+			name:      usrName,
+			cntStr:    sizeDB60,
+			useURL:    "true",
+			useClient: "true",
+			simData:   simDataDB60,
+			wantErr:   "queReq -> пустое значение даты",
+		},
+		{
+			nameTest:  "значение даты не в формате YYYY-MM-DD",
+			startDate: "02-01-2025",
+			token:     usrToken,
+			name:      usrName,
+			cntStr:    sizeDB60,
+			useURL:    "true",
+			useClient: "true",
+			simData:   simDataDB60,
+			wantErr:   "queReq -> значение даты не в формате YYYY-MM-DD",
+		},
+		{
+			nameTest:  "пустое значение token",
+			startDate: "2025-01-02",
+			token:     "",
+			name:      usrName,
+			cntStr:    sizeDB60,
+			useURL:    "true",
+			useClient: "true",
+			simData:   simDataDB60,
+			wantErr:   "queReq -> пустое значение token",
+		},
+		{
+			nameTest:  "пустое значение name",
+			startDate: "2025-01-02",
+			token:     usrToken,
+			name:      "",
+			cntStr:    sizeDB60,
+			useURL:    "true",
+			useClient: "true",
+			simData:   simDataDB60,
+			wantErr:   "queReq -> пустое значение name",
+		},
+		{
+			nameTest:  "пустое значение URL",
+			startDate: "2025-01-02",
+			token:     usrToken,
+			name:      usrName,
+			cntStr:    sizeDB60,
+			useURL:    "false",
+			useClient: "true",
+			simData:   simDataDB60,
+			wantErr:   "queReq -> пустое значение URL",
+		},
+		{
+			nameTest:  "в количестве строк отрицательное число",
+			startDate: "2025-01-02",
+			token:     usrToken,
+			name:      usrName,
+			cntStr:    -1,
+			useURL:    "true",
+			useClient: "true",
+			simData:   simDataDB60,
+			wantErr:   "queReq -> в количестве строк отрицательное число",
+		},
+		{
+			nameTest:  "нет указателя на https клиента",
+			startDate: "2025-01-02",
+			token:     usrToken,
+			name:      usrName,
+			cntStr:    0,
+			useURL:    "true",
+			useClient: "false",
+			simData:   simDataDB60,
+			wantErr:   "queReq -> нет указателя на https клиента",
+		},
 	}
 
-	sizeDB := len(simDataDB)
-
 	// Сервер
+	simDataDB := make([]DataEl, 0)
+
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 
 		w.Header().Set("Content-Type", "application-json")
@@ -1141,45 +1245,24 @@ func Test_QueReqPartDataDB_LT100str_Success(t *testing.T) {
 		w.Write(txByte)
 	}))
 
-	// Запросы
-	rxData, err := func() (data []PartDataDB, err error) {
+	// Тесты
+	for _, tt := range argData {
+		t.Run(tt.nameTest, func(t *testing.T) {
 
-		collectRxDataDB := make([]PartDataDB, 0)
+			simDataDB = tt.simData
 
-		// Вычисление количества необходимых запросов
-		iter := len(simDataDB) / 100
-
-		if iter == 0 {
-
-			rxData, err := ReqPartDataDB(0, 100, 0, date, token, name, server.URL, server.Client())
-			if err != nil {
-				return []PartDataDB{}, errors.New("ошибка при выполнении запроса при количестве строк < 100")
+			u := server.URL
+			if tt.useURL == "false" {
+				u = ""
 			}
-			collectRxDataDB = append(collectRxDataDB, rxData)
-
-		} else {
-
-			for i := 0; i < iter; i++ {
-
-				rxData, err := ReqPartDataDB(i, 100, 100*i, date, token, name, server.URL, server.Client())
-				if err != nil {
-					return []PartDataDB{}, fmt.Errorf("ошибка при выполнении запроса на итерации {%d}, {%v}", i, err)
-				}
-				collectRxDataDB = append(collectRxDataDB, rxData)
-				time.Sleep(10 * time.Millisecond) // установка небольшой паузы между очередным запросом
+			client := server.Client()
+			if tt.useClient == "false" {
+				client = nil
 			}
-		}
-		return collectRxDataDB, nil
-	}()
-	require.NoErrorf(t, err, "ожидалось отсутствие ошибки, а принято: {%v}", err)
-
-	// Подготовка для сохранения
-	saveData := make([]DataEl, 0)
-
-	for _, v := range rxData {
-		saveData = append(saveData, v.Data...)
+			_, err := QueReqPartDataDB(tt.startDate, tt.token, tt.name, u, tt.cntStr, client)
+			rxErr := fmt.Sprintf("%v", err)
+			assert.Equalf(t, tt.wantErr, rxErr, "ожидалась ошибка: {%s}, а принята: {%s}", tt.wantErr, rxErr)
+		})
 	}
 
-	rxCnt := len(saveData)
-	assert.Equalf(t, sizeDB, rxCnt, "ожидалось %d записей, а принято: %d", sizeDB, rxCnt)
 }

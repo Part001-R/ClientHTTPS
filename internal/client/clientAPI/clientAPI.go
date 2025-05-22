@@ -452,26 +452,31 @@ func QueReqPartDataDB(startDate, token, name, u string, cntStr int, client *http
 
 	// Проверка аргументов
 	if startDate == "" {
-		return []PartDataDB{}, errors.New("запрос строк -> пустое значение даты")
+		return []PartDataDB{}, errors.New("queReq -> пустое значение даты")
 	}
 	_, err = time.Parse("2006-01-02", startDate)
 	if err != nil {
-		return []PartDataDB{}, errors.New("запрос строк -> значение даты не в формате YYYY-MM-DD")
+		return []PartDataDB{}, errors.New("queReq -> значение даты не в формате YYYY-MM-DD")
 	}
 	if token == "" {
-		return []PartDataDB{}, errors.New("запрос строк -> пустое значение token")
+		return []PartDataDB{}, errors.New("queReq -> пустое значение token")
 	}
 	if name == "" {
-		return []PartDataDB{}, errors.New("запрос строк -> пустое значение name")
+		return []PartDataDB{}, errors.New("queReq -> пустое значение name")
 	}
 	if u == "" {
-		return []PartDataDB{}, errors.New("запрос строк -> пустое значение URL")
+		return []PartDataDB{}, errors.New("queReq -> пустое значение URL")
 	}
 	if cntStr < 0 {
-		return []PartDataDB{}, errors.New("запрос строк -> в количестве строк отрицательное число")
+		return []PartDataDB{}, errors.New("queReq -> в количестве строк отрицательное число")
 	}
 	if client == nil {
-		return []PartDataDB{}, errors.New("запрос строк -> нет указателя на https клиента")
+		return []PartDataDB{}, errors.New("queReq -> нет указателя на https клиента")
+	}
+
+	// Если количество строк в запросе = 0
+	if cntStr == 0 {
+		return []PartDataDB{}, nil
 	}
 
 	collectRxDataDB := make([]PartDataDB, 0)
@@ -484,7 +489,7 @@ func QueReqPartDataDB(startDate, token, name, u string, cntStr int, client *http
 
 		rxData, err := ReqPartDataDB(0, 100, 0, startDate, token, name, u, client)
 		if err != nil {
-			return []PartDataDB{}, errors.New("ошибка при выполнении запроса при количестве строк < 100")
+			return []PartDataDB{}, errors.New("queReq -> ошибка при выполнении запроса при количестве строк < 100")
 		}
 		collectRxDataDB = append(collectRxDataDB, rxData)
 
@@ -498,7 +503,7 @@ func QueReqPartDataDB(startDate, token, name, u string, cntStr int, client *http
 
 			rxData, err := ReqPartDataDB(i, 100, 100*i, startDate, token, name, u, client)
 			if err != nil {
-				return []PartDataDB{}, fmt.Errorf("ошибка при выполнении запроса на итерации {%d}, {%v}", i, err)
+				return []PartDataDB{}, fmt.Errorf("queReq -> ошибка при выполнении запроса при количестве строк >= 100, на итерации {%d}, {%v}", i, err)
 			}
 			collectRxDataDB = append(collectRxDataDB, rxData)
 
