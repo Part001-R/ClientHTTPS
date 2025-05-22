@@ -24,7 +24,11 @@ func main() {
 	run(clientHttps, userInfo)
 }
 
-// Подготовительные действия
+// Подготовительные действия. Возвращается указатель на http кдиент и данные пользователя.
+//
+// Параметры:
+//
+// usr - данные пользователя
 func prepare(usr *clientapi.UserLogin) (client *http.Client, userInfo clientapi.UserLogin) {
 
 	// Чтение переменных окружения
@@ -58,7 +62,11 @@ func prepare(usr *clientapi.UserLogin) (client *http.Client, userInfo clientapi.
 	return client, userInfo
 }
 
-// Вывод меню действия
+// Вывод меню действия.
+//
+// Параметры:
+//
+// client - указатель на http клиента
 func run(client *http.Client, usr clientapi.UserLogin) {
 	var str string
 
@@ -131,7 +139,7 @@ func run(client *http.Client, usr clientapi.UserLogin) {
 			}
 
 			// Формирование Exlx файла данных
-			err = saveDataXlsx(forSave)
+			err = saveDataXlsx(forSave, date)
 			if err != nil {
 				fmt.Printf("ошибка при сохранении данных в xlsx файл: {%v}", err)
 				fmt.Println("Работа прервана")
@@ -154,6 +162,8 @@ func run(client *http.Client, usr clientapi.UserLogin) {
 }
 
 // Запрос состояния сервера и вывод в терминал. Функция возвращает ошибку.
+//
+// statusSrv - сводная информация сервера
 func showStatusServer(statusSrv clientapi.RxStatusSrv) error {
 
 	fmt.Println()
@@ -188,12 +198,17 @@ func showStatusServer(statusSrv clientapi.RxStatusSrv) error {
 }
 
 // Функция зодаёт xlsx файл и сохраняет туда принятые данные от сервера. Возвращает ошибку.
-func saveDataXlsx(data clientapi.RxDataDB) (err error) {
+//
+// Параметры:
+//
+// data - данные для сахранения
+// date - дата
+func saveDataXlsx(data clientapi.RxDataDB, date string) (err error) {
 
 	tn := time.Now().Format("02.01.2006-15:04:05")
 
 	// Создание файла
-	fName := fmt.Sprintf("exportData:%s------------", data.StartDate)
+	fName := fmt.Sprintf("exportData:%s------------", date)
 
 	fileName, err := libre.CreateXlsx("./", fName, tn, ".xlsx")
 	if err != nil {

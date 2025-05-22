@@ -22,6 +22,17 @@ type (
 		CntStr string `json:"cntstr"`
 	}
 
+	// Для передачи даты и имени
+	DateNameT struct {
+		Date string `json:"date"`
+		Name string `json:"name"`
+	}
+
+	// Для передачи имени
+	NameT struct {
+		Name string `json:"name"`
+	}
+
 	// JSON для приёма данных состояния сервера
 	RxStatusSrv struct {
 		TimeStart string          `json:"timeStart"`
@@ -90,134 +101,61 @@ func ReqStatusServer(token, name, u string, client *http.Client) (dataRx RxStatu
 
 	// Проверка аргементов
 	if token == "" {
-		log.Fatal("Запрос статуса сервера -> пустое значение аргумента token")
+		return RxStatusSrv{}, errors.New("req-status -> пустое значение аргумента token")
 	}
 	if name == "" {
-		log.Fatal("Запрос статуса сервера -> пустое значение аргумента name")
+		return RxStatusSrv{}, errors.New("req-status -> пустое значение аргумента name")
 	}
 	if client == nil {
-		log.Fatal("Запрос статуса сервера -> нет ссылки на https клиент")
+		return RxStatusSrv{}, errors.New("req-status -> нет ссылки на http клиент")
+	}
+	if u == "" {
+		return RxStatusSrv{}, errors.New("req-status -> пустое значение URL")
 	}
 
-	// Добавление имени пользователя в параметры запроса
-	pURL, err := url.Parse(u)
+	// Тело запроса
+	infoTx := NameT{
+		Name: name,
+	}
+
+	bytesBody, err := json.Marshal(infoTx)
 	if err != nil {
-		return RxStatusSrv{}, fmt.Errorf("ошибка при парсинге URL: %v", err)
+		return RxStatusSrv{}, fmt.Errorf("req-status -> ошибка маршалинга данных: {%v}", err)
 	}
-	qPrm := url.Values{}
-	qPrm.Set("name", name)
 
-	pURL.RawQuery = qPrm.Encode()
+	reqBody := bytes.NewBuffer(bytesBody)
 
 	// Формирование запроса
-	req, err := http.NewRequest(http.MethodGet, pURL.String(), nil)
+	req, err := http.NewRequest(http.MethodPost, u, reqBody)
 	if err != nil {
-		return RxStatusSrv{}, fmt.Errorf("ошибка создания запроса: %v", err)
+		return RxStatusSrv{}, fmt.Errorf("req-status -> ошибка создания запроса: %v", err)
 	}
 
 	req.Header.Set("authorization", token)
 
 	resp, err := client.Do(req)
 	if err != nil {
-		return RxStatusSrv{}, fmt.Errorf("ошибка Get запроса: %v", err)
+		return RxStatusSrv{}, fmt.Errorf("req-status -> ошибка запроса: %v", err)
 	}
 	defer func() {
 		_ = resp.Body.Close()
 	}()
 
 	if resp.StatusCode != http.StatusOK {
-		return RxStatusSrv{}, fmt.Errorf("нет успешности запроса")
+		return RxStatusSrv{}, fmt.Errorf("req-status -> нет успешности запроса")
 	}
 
 	respBody, err := io.ReadAll(resp.Body)
 	if err != nil {
-		return RxStatusSrv{}, fmt.Errorf("ошибка при чтении тела ответа: %v", err)
+		return RxStatusSrv{}, fmt.Errorf("req-status -> ошибка при чтении тела ответа: %v", err)
 	}
 
 	err = json.Unmarshal(respBody, &dataRx)
 	if err != nil {
-		return RxStatusSrv{}, fmt.Errorf("ошибка обработки данных ответа: %v", err)
+		return RxStatusSrv{}, fmt.Errorf("req-status -> ошибка обработки данных ответа: %v", err)
 	}
 
 	return dataRx, nil
-}
-
-// Получение архивных данных БД. Возвращаются данные сервера и ошибка.
-//
-// Парметры:
-//
-// token - токен пользователя.
-// name - имя пользователя.
-// startDate - дата для выполнения экспорта данных.
-// u - URL.
-// client - указатель на созданный https клиент.
-func ReqDataDB(token, name, startDate, u string, client *http.Client) (dataRx RxDataDB, cntStr string, err error) {
-
-	// Проверка аргементов
-	if token == "" {
-		return RxDataDB{}, "", errors.New("запрос архивных данных -> пустое значение аргумента token")
-	}
-	if name == "" {
-		return RxDataDB{}, "", errors.New("запрос архивных данных -> пустое значение аргумента name")
-	}
-	if client == nil {
-		return RxDataDB{}, "", errors.New("запрос архивных данных -> нет ссылки на https клиент")
-	}
-	_, err = time.Parse("2006-01-02", startDate)
-	if err != nil {
-		return RxDataDB{}, "", errors.New("запрос архивных данных -> дата экспорта не в формате (YYYY-MM-DD)")
-	}
-	if u == "" {
-		return RxDataDB{}, "", errors.New("запрос архивных данных -> пустое значение аргумента URL")
-	}
-
-	parseU, err := url.Parse(u)
-	if err != nil {
-		return RxDataDB{}, "", fmt.Errorf("запрос архивных данных -> ошибка парсинга URL при запросе архивных данных БД: {%v}", err)
-	}
-
-	rawQ := url.Values{}
-	rawQ.Set("startdate", startDate)
-	rawQ.Set("name", name)
-
-	parseU.RawQuery = rawQ.Encode()
-
-	req, err := http.NewRequest(http.MethodGet, parseU.String(), nil)
-	if err != nil {
-		return RxDataDB{}, "", fmt.Errorf("запрос архивных данных -> ошибка формирования запроса: {%v}", err)
-	}
-
-	req.Header.Set("authorization", token)
-
-	resp, err := client.Do(req)
-	if err != nil {
-		return RxDataDB{}, "", fmt.Errorf("запрос архивных данных -> ошибка выполнения запроса к серверу: {%v}", err)
-	}
-
-	// Проверка статус кода ответа сервера
-	if resp.StatusCode != http.StatusOK {
-		return RxDataDB{}, "", fmt.Errorf("запрос архивных данных -> нет успешности запроса")
-	}
-
-	cntStr = resp.Header.Get("Count-Strings")
-	if cntStr == "" {
-		return RxDataDB{}, "", fmt.Errorf("запрос архивных данных -> нет данных о количестве записей")
-	}
-
-	dataResp, err := io.ReadAll(resp.Body)
-	if err != nil {
-		return RxDataDB{}, "", fmt.Errorf("запрос архивных данных -> ошибка чтения тела ответа: {%v}", err)
-	}
-	defer func() {
-		_ = resp.Body.Close()
-	}()
-
-	err = json.Unmarshal(dataResp, &dataRx)
-	if err != nil {
-		return RxDataDB{}, "", fmt.Errorf("запрос архивных данных -> ошибка при десериализации принятых данных от сервера: {%v}", err)
-	}
-
-	return dataRx, cntStr, nil
 }
 
 // Получение количества записей в БД по указанной дате. Возвращаются количество строк и ошибку.
@@ -233,53 +171,60 @@ func ReqCntStrByDateDB(token, name, startDate, u string, client *http.Client) (c
 
 	// Проверка аргементов
 	if token == "" {
-		return 0, errors.New("запрос количества строк -> пустое значение аргумента token")
+		return 0, errors.New("req-cntStr -> пустое значение аргумента token")
 	}
 	if name == "" {
-		return 0, errors.New("запрос количества строк -> пустое значение аргумента name")
+		return 0, errors.New("req-cntStr -> пустое значение аргумента name")
 	}
 	if client == nil {
-		return 0, errors.New("запрос количества строк -> нет ссылки на https клиент")
+		return 0, errors.New("req-cntStr -> нет ссылки на https клиент")
+	}
+	if startDate == "" {
+		return 0, errors.New("req-cntStr -> пустое значение даты")
 	}
 	_, err = time.Parse("2006-01-02", startDate)
 	if err != nil {
-		return 0, errors.New("запрос количества строк -> дата экспорта не в формате (YYYY-MM-DD)")
+		return 0, errors.New("req-cntStr -> принятая дата не в формате YYYY-MM-DD")
 	}
 	if u == "" {
-		return 0, errors.New("запрос количества строк -> пустое значение аргумента URL")
+		return 0, errors.New("req-cntStr -> пустое значение аргумента URL")
 	}
 
-	parseU, err := url.Parse(u)
-	if err != nil {
-		return 0, fmt.Errorf("запрос количества строк -> ошибка парсинга URL при запросе архивных данных БД: {%v}", err)
+	// Тело запроса
+	infoTx := DateNameT{
+		Date: startDate,
+		Name: name,
 	}
 
-	rawQ := url.Values{}
-	rawQ.Set("date", startDate)
-	rawQ.Set("name", name)
-
-	parseU.RawQuery = rawQ.Encode()
-
-	req, err := http.NewRequest(http.MethodGet, parseU.String(), nil)
+	bytesBody, err := json.Marshal(infoTx)
 	if err != nil {
-		return 0, fmt.Errorf("запрос количества строк -> ошибка формирования запроса: {%v}", err)
+		return 0, fmt.Errorf("req-cntStr -> ошибка маршалинга данных: {%v}", err)
+	}
+
+	reqBody := bytes.NewBuffer(bytesBody)
+
+	// Формирование запроса
+	req, err := http.NewRequest(http.MethodPost, u, reqBody)
+	if err != nil {
+		return 0, fmt.Errorf("req-cntStr -> ошибка формирования запроса: {%v}", err)
 	}
 
 	req.Header.Set("authorization", token)
 
 	resp, err := client.Do(req)
 	if err != nil {
-		return 0, fmt.Errorf("запрос количества строк -> ошибка выполнения запроса к серверу: {%v}", err)
+		return 0, fmt.Errorf("req-cntStr -> ошибка выполнения запроса к серверу: {%v}", err)
 	}
 
-	// Проверка статус кода ответа сервера
+	// Статус ответа
 	if resp.StatusCode != http.StatusOK {
-		return 0, fmt.Errorf("запрос количества строк-> сервер вернул не код 200")
+		return 0, fmt.Errorf("req-cntStr -> сервер вернул не код 200")
 	}
 
+	// Ответ
 	dataResp, err := io.ReadAll(resp.Body)
 	if err != nil {
-		return 0, fmt.Errorf("запрос количества строк -> ошибка чтения тела ответа: {%v}", err)
+		return 0, fmt.Errorf("req-cntStr -> ошибка чтения тела ответа: {%v}", err)
 	}
 	defer func() {
 		_ = resp.Body.Close()
@@ -289,12 +234,12 @@ func ReqCntStrByDateDB(token, name, startDate, u string, client *http.Client) (c
 
 	err = json.Unmarshal(dataResp, &rxJson)
 	if err != nil {
-		return 0, fmt.Errorf("запрос количества строк -> ошибка при десериализации принятых данных от сервера: {%v}", err)
+		return 0, fmt.Errorf("req-cntStr -> ошибка при десериализации принятых данных от сервера: {%v}", err)
 	}
 
 	cntStr, err = strconv.Atoi(rxJson.CntStr)
 	if err != nil {
-		return 0, fmt.Errorf("запрос количества строк -> принятое значение {%s} не является числов", rxJson.CntStr)
+		return 0, fmt.Errorf("req-cntStr -> принятое значение {%s} не является числов", rxJson.CntStr)
 	}
 
 	return cntStr, nil
@@ -359,6 +304,111 @@ func ReqLoginServer(name, password, u string, client *http.Client) (user UserLog
 
 }
 
+// Частичный запрос строк БД по дате, количеству строк и смещению. Возвращается результат запроса и ошибка.
+//
+// Параметры:
+//
+// numbReq - номер запроса.
+// strLimit - количество строк.
+// strOffSet - смещение номеров строк.
+// dataDB - дата.
+// token - токен.
+// name - имя пользователя.
+// u - URL.
+// client - указатель на https клиента.
+func ReqPartDataDB(numbReg, strLimit, strOffSet int, dateDB, token, name, u string, client *http.Client) (data PartDataDB, err error) {
+
+	// Проверка значений аргументов
+	if numbReg < 0 {
+		return PartDataDB{}, errors.New("req-partdatadb -> значение аргумента numbReg, меньше нуля")
+	}
+	if strLimit < 0 {
+		return PartDataDB{}, errors.New("req-partdatadb -> значение аргумента strLimit, меньше нуля")
+	}
+	if strOffSet < 0 {
+		return PartDataDB{}, errors.New("req-partdatadb -> значение аргумента strOffSet, меньше нуля")
+	}
+	if dateDB == "" {
+		return PartDataDB{}, errors.New("req-partdatadb -> пустое значение даты")
+	}
+	_, err = time.Parse("2006-01-02", dateDB)
+	if err != nil {
+		return PartDataDB{}, errors.New("req-partdatadb -> значение даты не в формате YYYY-MM-DD")
+	}
+	if token == "" {
+		return PartDataDB{}, errors.New("req-partdatadb -> пустое значение токена")
+	}
+	if name == "" {
+		return PartDataDB{}, errors.New("req-partdatadb -> пустое значение имени")
+	}
+	if u == "" {
+		return PartDataDB{}, errors.New("req-partdatadb -> пустое содержимое URL")
+	}
+	if client == nil {
+		return PartDataDB{}, errors.New("req-partdatadb -> нет указателя на https клиент")
+	}
+
+	// Тело запроса
+	infoTx := DateNameT{
+		Date: dateDB,
+		Name: name,
+	}
+
+	bytesBody, err := json.Marshal(infoTx)
+	if err != nil {
+		return PartDataDB{}, fmt.Errorf("req-partdatadb -> ошибка маршалинга данных: {%v}", err)
+	}
+
+	reqBody := bytes.NewBuffer(bytesBody)
+
+	// Параметры запроса
+	parseU, err := url.Parse(u)
+	if err != nil {
+		return PartDataDB{}, errors.New("req-partdatadb -> ошибка парсинга URL")
+	}
+	qP := url.Values{}
+	qP.Set("numbReg", fmt.Sprintf("%d", numbReg))
+	qP.Set("strLimit", fmt.Sprintf("%d", strLimit))
+	qP.Set("strOffSet", fmt.Sprintf("%d", strOffSet))
+
+	parseU.RawQuery = qP.Encode()
+
+	// Формирование запроса
+	req, err := http.NewRequest(http.MethodPost, parseU.String(), reqBody)
+	if err != nil {
+		return PartDataDB{}, fmt.Errorf("req-partdatadb -> ошибка формирования запроса {%v}", err)
+	}
+
+	req.Header.Set("authorization", token)
+
+	// Запрос к серверу
+	resp, err := client.Do(req)
+	if err != nil {
+		return PartDataDB{}, fmt.Errorf("req-partdatadb -> ошибка выполнения запроса {%v}", err)
+	}
+
+	// Проверка статус-кода ответа сервера на 200
+	if resp.StatusCode != http.StatusOK {
+		return PartDataDB{}, errors.New("req-partdatadb -> сервер не вернул код 200")
+	}
+
+	// Обработка ответа
+	body, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return PartDataDB{}, fmt.Errorf("req-partdatadb -> ошибка чтения тела ответа {%v}", err)
+	}
+	defer func() {
+		_ = resp.Body.Close()
+	}()
+
+	err = json.Unmarshal(body, &data)
+	if err != nil {
+		return PartDataDB{}, fmt.Errorf("req-partdatadb -> ошибка десиарелизации ответа {%v}", err)
+	}
+
+	return data, nil
+}
+
 // Создание HTTPS клиента. Функция возвращает https клиент и ошибку
 func CreateHttpsClient() (client *http.Client, err error) {
 
@@ -401,9 +451,12 @@ func CreateHttpsClient() (client *http.Client, err error) {
 func QueReqPartDataDB(startDate, token, name, u string, cntStr int, client *http.Client) (rxRataDB []PartDataDB, err error) {
 
 	// Проверка аргументов
-	t, err := time.Parse("2006-01-02", startDate)
+	if startDate == "" {
+		return []PartDataDB{}, errors.New("запрос строк -> пустое значение даты")
+	}
+	_, err = time.Parse("2006-01-02", startDate)
 	if err != nil {
-		return []PartDataDB{}, fmt.Errorf("запрос строк -> ошибка в содержимом даты: {%s}", t)
+		return []PartDataDB{}, errors.New("запрос строк -> значение даты не в формате YYYY-MM-DD")
 	}
 	if token == "" {
 		return []PartDataDB{}, errors.New("запрос строк -> пустое значение token")
@@ -415,7 +468,7 @@ func QueReqPartDataDB(startDate, token, name, u string, cntStr int, client *http
 		return []PartDataDB{}, errors.New("запрос строк -> пустое значение URL")
 	}
 	if cntStr < 0 {
-		return []PartDataDB{}, fmt.Errorf("запрос строк -> в количестве строк отрицательное число: {%d}", cntStr)
+		return []PartDataDB{}, errors.New("запрос строк -> в количестве строк отрицательное число")
 	}
 	if client == nil {
 		return []PartDataDB{}, errors.New("запрос строк -> нет указателя на https клиента")
@@ -455,89 +508,4 @@ func QueReqPartDataDB(startDate, token, name, u string, cntStr int, client *http
 	fmt.Println()
 
 	return collectRxDataDB, nil
-}
-
-// Частичный запрос строк БД по дате, количеству строк и смещению. Возвращается результат запроса и ошибка.
-//
-// Параметры:
-//
-// numbReq - номер запроса.
-// strLimit - количество строк.
-// strOffSet - смещение номеров строк.
-// dataDB - дата.
-// token - токен.
-// name - имя пользователя.
-// u - URL.
-// client - указатель на https клиента.
-func ReqPartDataDB(numbReg, strLimit, strOffSet int, dateDB, token, name, u string, client *http.Client) (data PartDataDB, err error) {
-
-	// Проверка значений аргументов
-	if numbReg < 0 {
-		return PartDataDB{}, errors.New("req-partdatadb -> значение аргумента numbReg, меньше нуля")
-	}
-	if strLimit < 0 {
-		return PartDataDB{}, errors.New("req-partdatadb -> значение аргумента strLimit, меньше нуля")
-	}
-	if strOffSet < 0 {
-		return PartDataDB{}, errors.New("req-partdatadb -> значение аргумента strOffSet, меньше нуля")
-	}
-	_, err = time.Parse("2006-01-02", dateDB)
-	if err != nil {
-		return PartDataDB{}, fmt.Errorf("req-partdatadb -> значение аргумента dataDB {%s}, не дата", dateDB)
-	}
-	if u == "" {
-		return PartDataDB{}, errors.New("req-partdatadb -> пустое содержимое URL")
-	}
-	if client == nil {
-		return PartDataDB{}, errors.New("req-partdatadb -> нет указателя на https клиент")
-	}
-
-	// Параметры запроса
-	parseU, err := url.Parse(u)
-	if err != nil {
-		return PartDataDB{}, errors.New("req-partdatadb -> ошибка парсинга URL")
-	}
-	qP := url.Values{}
-	qP.Set("numbReg", fmt.Sprintf("%d", numbReg))
-	qP.Set("strLimit", fmt.Sprintf("%d", strLimit))
-	qP.Set("strOffSet", fmt.Sprintf("%d", strOffSet))
-	qP.Set("date", dateDB)
-	qP.Set("name", name)
-
-	parseU.RawQuery = qP.Encode()
-
-	// Формирование запроса
-	req, err := http.NewRequest(http.MethodGet, parseU.String(), nil)
-	if err != nil {
-		return PartDataDB{}, fmt.Errorf("req-partdatadb -> ошибка формирования запроса {%v}", err)
-	}
-
-	req.Header.Set("authorization", token)
-
-	// Запрос к серверу
-	resp, err := client.Do(req)
-	if err != nil {
-		return PartDataDB{}, fmt.Errorf("req-partdatadb -> ошибка выполнения запроса {%v}", err)
-	}
-
-	// Проверка статус-кода ответа сервера на 200
-	if resp.StatusCode != http.StatusOK {
-		return PartDataDB{}, fmt.Errorf("req-partdatadb -> сервер вернул код {%d}", resp.StatusCode)
-	}
-
-	// Обработка ответа
-	body, err := io.ReadAll(resp.Body)
-	if err != nil {
-		return PartDataDB{}, fmt.Errorf("req-partdatadb -> ошибка чтения тела ответа {%v}", err)
-	}
-	defer func() {
-		_ = resp.Body.Close()
-	}()
-
-	err = json.Unmarshal(body, &data)
-	if err != nil {
-		return PartDataDB{}, fmt.Errorf("req-partdatadb -> ошибка десиарелизации ответа {%v}", err)
-	}
-
-	return data, nil
 }
