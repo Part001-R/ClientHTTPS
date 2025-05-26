@@ -33,6 +33,11 @@ type (
 		Name string `json:"name"`
 	}
 
+	// Для токена
+	TokenT struct {
+		Token string `json:"token"`
+	}
+
 	// JSON для приёма данных состояния сервера
 	RxStatusSrv struct {
 		TimeStart string          `json:"timeStart"`
@@ -297,8 +302,15 @@ func ReqLoginServer(name, password, u string, client *http.Client) (user UserLog
 		_ = resp.Body.Close()
 	}()
 
+	var dataRx TokenT
+
+	err = json.Unmarshal(respBody, &dataRx)
+	if err != nil {
+		return UserLogin{}, errors.New("login -> ошибка при десериализации принятых данных")
+	}
+
 	// Фиксация данных
-	user.Token = string(respBody)
+	user.Token = dataRx.Token
 	user.Name = name
 	return user, nil
 

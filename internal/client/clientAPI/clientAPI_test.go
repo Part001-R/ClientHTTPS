@@ -25,8 +25,18 @@ func Test_ReqLoginServer_Success(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 
 		w.Header().Set("Content-Type", "application-json")
+
+		var dataTx TokenT
+		dataTx.Token = token
+
+		byteTx, err := json.Marshal(dataTx)
+		if err != nil {
+			http.Error(w, http.StatusText(http.StatusInternalServerError), http.StatusInternalServerError)
+			return
+		}
+
 		w.WriteHeader(http.StatusOK)
-		_, err := w.Write([]byte(token))
+		_, err = w.Write(byteTx)
 		if err != nil {
 			require.NoErrorf(t, err, "ошибка при передаче данных в writer:{%v}", err)
 		}
