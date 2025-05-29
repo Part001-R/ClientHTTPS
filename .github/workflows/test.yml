@@ -1,0 +1,62 @@
+name: Test
+
+on:
+    push:
+        branches: [main]
+    pull_request: 
+        branches: [main]
+
+jobs:
+    build:
+        runs-on: ubuntu-latest
+        steps:
+        - name: Install Go
+          uses: actions/setup-go@v5
+          with:
+            go-version: 1.24
+        - name: Checkout
+          uses: actions/Checkout@v4
+        - name: Build
+          working-directory: cmd/client
+          run: go build -v -o client main.go
+    
+    lint:
+        needs: build
+        runs-on: ubuntu-latest
+        steps:
+        - name: Install Go
+          uses: actions/setup-go@v5
+          with:
+            go-version: 1.24
+        - name: Checkout
+          uses: actions/Checkout@v4
+        - name: Lint
+          run: go vet ./...   
+
+    test:
+        needs:
+        - lint
+        runs-on: ubuntu-latest
+        steps:
+        - name: Install Go
+          uses: actions/setup-go@v5
+          with:
+            go-version: 1.24
+        - name: Checkout
+          uses: actions/Checkout@v4
+        - name: Test
+          run: go test -v ./...
+
+    test_race:
+        needs: test
+        runs-on: ubuntu-latest
+        steps:
+        - name: Install Go
+          uses: actions/setup-go@v5
+          with:
+            go-version: 1.24
+        - name: Checkout
+          uses: actions/Checkout@v4
+        - name: Test
+          run: go test -race -v ./...
+
